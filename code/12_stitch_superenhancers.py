@@ -86,6 +86,19 @@ def stitch(peaks, distance=STITCH):
     return out
 
 
+def score_regions_binned(regions, binned, binsize=200):
+    """Total signal per region, read off an already-binned genome."""
+    scores = []
+    for c, s, e, _ in regions:
+        a = binned.get(c)
+        if a is None:
+            scores.append(0.0)
+            continue
+        i, j = s // binsize, min(len(a), (e + binsize - 1) // binsize)
+        scores.append(float(a[i:j].sum() * binsize) if j > i else 0.0)
+    return np.array(scores, dtype=float)
+
+
 def score_regions(regions, bigwig):
     """Total signal (area) per stitched region."""
     import pyBigWig
@@ -133,12 +146,14 @@ def inflection_cutoff(scores):
 
 
 def call_superenhancers(peaks_bed, bigwig, promoters_bed, out_tsv,
-                        stitch_distance=STITCH, label=None):
+                        stitch_distance=STITCH, label=None, binned=None,
+                        binsize=200):
     peaks = read_peaks(peaks_bed)
     prom = load_promoters(promoters_bed)
     kept = [(c, s, e) for c, s, e in peaks if not inside_any(prom.get(c, []), s, e)]
     regions = stitch(kept, stitch_distance)
-    scores = score_regions(regions, bigwig)
+    scores = (score_regions_binned(regions, binned, binsize) if binned is not None
+              else score_regions(regions, bigwig))
     cutoff, n_super = inflection_cutoff(scores)
 
     order = np.argsort(-scores)

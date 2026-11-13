@@ -199,6 +199,7 @@ def main():
                         {
                             "sample": sample,
                             "enh_chrom": ec, "enh_start": es, "enh_end": ee,
+                            "prom_start": ps, "prom_end": pe,
                             "contact_gene": gname,
                             "contact_dist": abs(gp - emid),
                             "nearest_gene": nn,

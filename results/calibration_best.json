@@ -1,0 +1,14 @@
+{
+  "quantile": 0.97,
+  "gap": 200,
+  "min_width": 500,
+  "binsize": 200,
+  "jaccard_median": 0.6993582088103075,
+  "f1_median": 0.7908400197747958,
+  "precision_median": 0.8542667581789064,
+  "recall_median": 0.7985017164490359,
+  "n_called_median": 44976.0,
+  "n_calibration_samples": 21,
+  "calibration_cohort": "pHGG_pediatric (GSE162976)",
+  "truth": "published ENCODE-pipeline MACS2 narrowPeak, same GSMs"
+}

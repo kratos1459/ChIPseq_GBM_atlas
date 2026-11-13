@@ -12,3 +12,5 @@ results/se/
 *.bigwig
 *.bedGraph.gz
 *.npz
+__pycache__/
+*.pyc

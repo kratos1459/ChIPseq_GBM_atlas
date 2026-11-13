@@ -97,20 +97,22 @@ def one_sample(row, par):
     blacklist = os.path.join(REF, f"{genome}.blacklist.bed")
     promoters = os.path.join(REF, f"promoters_2kb.{genome}.bed")
 
+    binned = None
     try:
-        if not os.path.exists(peak_bed):
+        if not (os.path.exists(peak_bed) and os.path.exists(se_tsv)):
             binned = sp.bin_genome(bw, sizes, cache_dir=None)
+        if not os.path.exists(peak_bed):
             regs = sp.call_from_binned(
                 binned, par["quantile"], par["gap"], par["min_width"]
             )
             regs = sp.drop_blacklist(regs, blacklist)
             sp.write_bed(regs, peak_bed)
-            del binned
         n_peaks = sum(1 for _ in open(peak_bed))
 
         if not os.path.exists(se_tsv):
             st = se.call_superenhancers(peak_bed, bw, promoters, se_tsv,
-                                        label=row["label"])
+                                        label=row["label"], binned=binned,
+                                        binsize=sp.BIN)
         else:
             df = pd.read_csv(se_tsv, sep="\t")
             st = {

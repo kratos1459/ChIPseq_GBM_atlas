@@ -1,0 +1,7 @@
+,mean,sd
+genes_all_gsc_not_nsc,435.5,16.398010148859687
+genes_nsc_not_any_gsc,1454.0,33.65459224158522
+genes_contacted_nsc,6890.0,0.0
+genes_contacted_gsc_mean,7136.8125,22.94542653088433
+nearest_correct_gsc_mean,0.179258337954551,0.0008443360243043407
+nearest_correct_nsc,0.1787773058252427,0.0

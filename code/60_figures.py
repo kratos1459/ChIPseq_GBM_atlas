@@ -164,7 +164,7 @@ def fig4():
     if not os.path.exists(p):
         return print("  fig4: no loop controls")
     c = pd.read_csv(p)
-    fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.5))
+    fig, axes = plt.subplots(1, 4, figsize=(9.2, 2.5))
     x = np.arange(len(c))
     w = 0.26
     axes[0].bar(x - w, c["nearest_correct_all"], w, color=GREY, label="all links")
@@ -199,6 +199,30 @@ def fig4():
         axes[2].set_xticklabels(["GSC vs GSC", "GSC vs NSC"], rotation=15)
         axes[2].set_ylabel("target-set Jaccard")
     letter(axes[2], "c")
+
+    # depth matching: how much of the "GSC-specific" claim survives
+    dm = os.path.join(LT, "depth_matched_summary.csv")
+    gs = os.path.join(LT, "gsc_specific_targets.csv")
+    dg = os.path.join(LT, "depth_matched_genes.csv")
+    if os.path.exists(dm) and os.path.exists(gs) and os.path.exists(dg):
+        b = pd.read_csv(gs)
+        n_before = int(((b["n_gsc_samples"] == b["n_gsc_samples"].max())
+                        & (b["in_nsc"] == 0)).sum())
+        g = pd.read_csv(dg)
+        n_after = int((g["frac_repeats"] >= 0.8).sum())
+        d = pd.read_csv(dm, index_col=0)
+        n_mid = float(d.loc["genes_all_gsc_not_nsc", "mean"]) \
+            if "genes_all_gsc_not_nsc" in d.index else np.nan
+        vals = [n_before, n_mid, n_after]
+        axes[3].bar(range(3), vals, color=[GREY, ORANGE, GREEN], width=0.6)
+        for i, v in enumerate(vals):
+            if np.isfinite(v):
+                axes[3].text(i, v, f"{v:,.0f}", ha="center", va="bottom", fontsize=6)
+        axes[3].set_xticks(range(3))
+        axes[3].set_xticklabels(["as called", "depth-\nmatched", "robust\n(>=80%)"],
+                                fontsize=6)
+        axes[3].set_ylabel("genes contacted in all GSC, not NSC")
+    letter(axes[3], "d")
     fig.tight_layout()
     save(fig, "Fig4_target_assignment")
 
