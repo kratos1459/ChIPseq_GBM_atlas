@@ -1,0 +1,14 @@
+# raw and derived sequencing data are too large to version
+data/raw/
+data/bigwig_hg19/
+data/cache_bins/
+data/ref/*.fa
+data/ref/*.fa.gz
+data/ref/*.chain.gz
+data/ref/*.gtf.gz
+data/validation/
+results/se/
+*.bw
+*.bigwig
+*.bedGraph.gz
+*.npz
