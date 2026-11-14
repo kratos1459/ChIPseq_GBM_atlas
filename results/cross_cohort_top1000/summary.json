@@ -1,0 +1,20 @@
+{
+  "binsize": 5000,
+  "n_bins_any_se": 109202,
+  "definition": "fixed top-1000 domains per sample",
+  "nsc_max": 0.25,
+  "other_max": 0.25,
+  "n_gsc_specific_domains": 25,
+  "gsc_specific_mb": 0.39,
+  "n_patient_specific_domains": 83,
+  "patient_specific_mb": 0.85,
+  "n_sporadic_domains": 9246,
+  "sporadic_mb": 182.66,
+  "n_bins_core_both_cohorts": 1846,
+  "n_bins_core_tumour_specific": 178,
+  "n_core_domains": 76,
+  "core_mb": 0.89,
+  "core_median_recurrence_in_pediatric": 0.2857142857142857,
+  "core_frac_recurrent_in_pediatric": 0.16292134831460675,
+  "core_nearest_is_contact_frac": 0.6833333333333333
+}

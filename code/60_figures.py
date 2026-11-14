@@ -61,41 +61,47 @@ def letter(ax, s):
 
 
 def fig1():
-    p = os.path.join(RES, "se_summary.csv")
+    p = os.path.join(CC, "samples_used.csv")
     if not os.path.exists(p):
-        return print("  fig1: no se_summary.csv")
+        return print("  fig1: no samples_used.csv")
     d = pd.read_csv(p)
-    d = d[d["status"] == "ok"]
-    if d.empty:
-        return print("  fig1: no completed samples")
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.3))
-    g = d.groupby("cohort").size().sort_values()
-    axes[0].barh(range(len(g)), g.values, color=GREY, height=0.6)
-    axes[0].set_yticks(range(len(g)))
-    axes[0].set_yticklabels([x.replace("_", " ") for x in g.index])
+    order = [g for g in ("GSC_line", "patient_tumour", "NSC", "pediatric")
+             if g in set(d["group"])]
+    names = {"GSC_line": "GSC lines", "patient_tumour": "patient tumours",
+             "NSC": "neural stem cells", "pediatric": "pediatric HGG"}
+    fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.5))
+    n = d.groupby("group").size().reindex(order)
+    axes[0].barh(range(len(n)), n.values, color=[PALETTE.get(g, ORANGE) for g in order],
+                 height=0.6)
+    for i, v in enumerate(n.values):
+        axes[0].text(v + 1, i, str(int(v)), va="center", fontsize=6)
+    axes[0].set_yticks(range(len(n)))
+    axes[0].set_yticklabels([names[g] for g in order])
+    axes[0].invert_yaxis()
     axes[0].set_xlabel("H3K27ac samples")
     letter(axes[0], "a")
 
-    order = sorted(d["cohort"].unique())
-    data = [d.loc[d["cohort"] == c, "n_super"].dropna().values for c in order]
+    data = [d.loc[d["group"] == g, "n_se"].values for g in order]
     bp = axes[1].boxplot(data, widths=0.55, patch_artist=True, showfliers=False)
-    for patch, c in zip(bp["boxes"], order):
-        patch.set_facecolor(PALETTE.get(c, ORANGE))
-        patch.set_alpha(0.5)
+    for patch, g in zip(bp["boxes"], order):
+        patch.set_facecolor(PALETTE.get(g, ORANGE))
+        patch.set_alpha(0.45)
         patch.set_linewidth(0.6)
+    rng = np.random.default_rng(1)
     for i, vals in enumerate(data, 1):
-        if len(vals):
-            x = np.random.default_rng(1).normal(i, 0.055, len(vals))
-            axes[1].plot(x, vals, ".", ms=2, color="k", alpha=0.45)
+        axes[1].plot(rng.normal(i, 0.055, len(vals)), vals, ".", ms=2, color="k", alpha=0.45)
     axes[1].set_xticks(range(1, len(order) + 1))
-    axes[1].set_xticklabels([c.split("_")[0] for c in order], rotation=20)
-    axes[1].set_ylabel("super-enhancers per sample")
+    axes[1].set_xticklabels([names[g].split()[0] for g in order], rotation=20)
+    axes[1].set_ylabel("super-enhancers (ROSE inflection)")
     letter(axes[1], "b")
 
-    axes[2].scatter(d["n_stitched"], d["n_super"], s=6, c=[
-        PALETTE.get(c, ORANGE) for c in d["cohort"]], alpha=0.7, linewidths=0)
+    for g in order:
+        s = d[d["group"] == g]
+        axes[2].scatter(s["n_stitched"], s["n_se"], s=6, alpha=0.7, linewidths=0,
+                        color=PALETTE.get(g, ORANGE), label=names[g])
     axes[2].set_xlabel("stitched enhancer domains")
     axes[2].set_ylabel("super-enhancers")
+    axes[2].legend(frameon=False, fontsize=5.5, markerscale=2)
     letter(axes[2], "c")
     fig.tight_layout()
     save(fig, "Fig1_cohort_composition")
@@ -153,7 +159,12 @@ def fig3():
     metrics = [("spearman", "Spearman ρ", (-0.1, 0.5)),
                ("ap_predicting_b", "average precision", (0, 1)),
                ("jaccard_at_50pct", "Jaccard, ≥50% recurrence", (0, 1))]
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 3.3), sharey=True)
+    sm_path = os.path.join(CC, "size_matched_reps.csv")
+    has_sm = os.path.exists(sm_path)
+    fig = plt.figure(figsize=(7.2, 6.0 if has_sm else 3.3), layout="constrained")
+    top, bot = (fig.subfigures(2, 1, height_ratios=[1.1, 1.0], hspace=0.04)
+                if has_sm else (fig, None))
+    axes = top.subplots(1, 3, sharey=True)
     y = np.arange(len(a))
     cols = [GREEN if "split-half" in s else BLUE for s in a.index]
     for ax, (col, lab, lim) in zip(axes, metrics):
@@ -172,7 +183,7 @@ def fig3():
             ok = np.isfinite(base)
             ax.plot(base[ok], y[ok], "|", color=RED, ms=7, mew=1.2,
                     label="chance (prevalence)")
-            ax.legend(frameon=False, fontsize=5.5, loc="center right")
+            ax.legend(frameon=False, fontsize=5.5, loc="lower right")
         ax.set_xlim(*lim)
         ax.set_xlabel(lab)
         ax.axvline(0, color="k", lw=0.4)
@@ -180,10 +191,42 @@ def fig3():
     axes[0].set_yticklabels(labels, fontsize=6)
     axes[0].invert_yaxis()
     letter(axes[0], "a")
-    fig.text(0.01, 0.005, "green: two random halves of one cohort (noise ceiling); "
-             "blue: between cohorts. Fixed top-500 domains per sample.",
-             fontsize=5.5)
-    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    top.text(0.01, 0.0, "green: two random halves of one cohort; blue: between "
+             "cohorts, full groups. Fixed top-500 domains per sample.", fontsize=5.5)
+    if has_sm:
+        sm = pd.read_csv(sm_path)
+        bx = bot.subplots(1, 3, gridspec_kw={"width_ratios": [3, 2, 1]})
+        tnames = {"patient_tumour": "target: patient tumours",
+                  "pediatric": "target: pediatric HGG", "NSC": "target: NSC"}
+        snames = {"GSC_line": "GSC lines", "patient_tumour": "tumours"}
+        for ax, tgt in zip(bx, ["patient_tumour", "pediatric", "NSC"]):
+            s = sm[sm["target"] == tgt]
+            ks = sorted(s["k"].unique())
+            srcs = [x for x in s["source"].unique() if not x.endswith("(within)")]
+            series = [f"{tgt} (within)"] + srcs
+            w = 0.8 / len(series)
+            for j, src in enumerate(series):
+                col = GREEN if src.endswith("(within)") else PALETTE.get(src, ORANGE)
+                lab = "within target" if src.endswith("(within)") else snames.get(src, src)
+                for i, k in enumerate(ks):
+                    v = s[(s["source"] == src) & (s["k"] == k)]["ap"].dropna()
+                    xpos = i + (j - (len(series) - 1) / 2) * w
+                    ax.bar(xpos, v.mean(), w * 0.9, color=col, alpha=0.8,
+                           label=lab if i == 0 else None)
+                    lo, hi = np.percentile(v, [2.5, 97.5])
+                    ax.plot([xpos, xpos], [lo, hi], color="k", lw=0.6)
+            base = s.groupby("k")["baseline"].mean().reindex(ks).to_numpy()
+            ax.plot(np.arange(len(ks)), base, "_", color=RED, ms=14, mew=1.3,
+                    label="chance")
+            ax.set_xticks(range(len(ks)))
+            ax.set_xticklabels([f"k = {k}" for k in ks])
+            ax.set_ylim(0, 1)
+            ax.set_title(tnames[tgt], fontsize=7.5)
+            ax.legend(frameon=False, fontsize=5.5, loc="upper left")
+        bx[0].set_ylabel("average precision\n(k samples vs k samples)")
+        letter(bx[0], "b")
+        bot.text(0.01, 0.0, "Both sides average exactly k distinct samples; bars, "
+                 "mean of 50 draws; lines, 2.5–97.5 percentile.", fontsize=5.5)
     save(fig, "Fig3_agreement_vs_ceiling")
 
 
@@ -266,8 +309,11 @@ def fig5():
     keys = [k for k in ("n_core_domains", "n_gsc_specific_domains",
                         "n_patient_specific_domains", "n_sporadic_domains")
             if k in s]
-    axes[0].bar(range(len(keys)), [s[k] for k in keys],
-                color=[GREEN, BLUE, RED, GREY][: len(keys)])
+    vals5 = [s[k] for k in keys]
+    axes[0].bar(range(len(keys)), vals5, color=[GREEN, BLUE, RED, GREY][: len(keys)])
+    axes[0].set_yscale("log")
+    for i, v in enumerate(vals5):
+        axes[0].text(i, v * 1.15, f"{v:,}", ha="center", fontsize=6)
     axes[0].set_xticks(range(len(keys)))
     axes[0].set_xticklabels([k.replace("n_", "").replace("_domains", "").replace("_", " ")
                              for k in keys], rotation=25, fontsize=6)
@@ -281,8 +327,15 @@ def fig5():
     letter(axes[1], "b")
 
     top = g.nlargest(14, "width_kb").iloc[::-1]
-    lab = [(str(t) if isinstance(t, str) and t else "-")[:16]
-           for t in top["nearest_gene"]]
+    def _lab(r):
+        n = r["nearest_gene"] if isinstance(r["nearest_gene"], str) else ""
+        if n and not n.startswith("ENSG"):
+            return n[:16]
+        cg = r.get("contact_genes", "")
+        if isinstance(cg, str) and cg:
+            return (cg.split(";")[0] + " (contact)")[:20]
+        return (n or "-")[:16]
+    lab = [_lab(r) for _, r in top.iterrows()]
     axes[2].barh(range(len(top)), top["width_kb"], color=GREEN, height=0.65)
     axes[2].set_yticks(range(len(top)))
     axes[2].set_yticklabels(lab, fontsize=6)
@@ -313,7 +366,13 @@ def fig6():
         ax.set_yticks(range(len(d)))
         ax.set_yticklabels([str(x)[:14] for x in d[name_col]], fontsize=6)
         ax.set_xlabel("-log10 q")
+        ax.axvline(-np.log10(0.05), color=RED, lw=0.8, ls="--")
         ax.set_title(comp.replace("_", " "), fontsize=7)
+    xmax = max(a.get_xlim()[1] for a in axes[0])
+    for a in axes[0]:
+        a.set_xlim(0, xmax)
+    axes[0][-1].text(-np.log10(0.05), axes[0][-1].get_ylim()[0], " q = 0.05",
+                     color=RED, fontsize=6, va="bottom")
     letter(axes[0][0], "a")
     fig.tight_layout()
     save(fig, "Fig6_motif_enrichment")
@@ -341,7 +400,12 @@ def fig7():
             patch.set_linewidth(0.6)
         ax.set_xticks(range(1, len(order) + 1))
         ax.set_xticklabels(["core SE", "other SE", "no SE"], rotation=20, fontsize=6)
-        ax.set_ylabel(f"expression ({ec})")
+        ylab = {"tcga_gbm": "TCGA GBM, median log2(norm. count + 1)",
+                "pedi_tpm": "pediatric HGG, median log2(TPM + 1)",
+                "gsc_cpm": "GSC lines, median log2(CPM + 1)"}
+        ax.set_ylabel(ylab.get(ec, ec), fontsize=6.5)
+    for ax, s in zip(axes[0], "abcd"):
+        letter(ax, s)
     ax = axes[0][-1]
     if os.path.exists(t):
         tt = pd.read_csv(t)

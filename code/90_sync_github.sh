@@ -18,7 +18,7 @@ for f in sample_metadata.csv series_metadata.csv filelist.csv \
 done
 
 # result tables and beds, excluding per-sample bulk
-rsync -a --delete \
+rsync -a --delete --delete-excluded \
   --exclude='se/' --exclude='se_test/' --exclude='_v1_*/' \
   --include='*/' \
   --include='*.csv' --include='*.csv.gz' --include='*.json' \
@@ -27,6 +27,8 @@ rsync -a --delete \
   --exclude='*' \
   "$SRC/results/" "$DST/results/" 2>/dev/null
 rsync -a --delete "$SRC/figures/" "$DST/figures/" 2>/dev/null
+mkdir -p "$DST/manuscript"
+rsync -a --delete "$SRC/manuscript/" "$DST/manuscript/" 2>/dev/null
 
 cat > "$DST/.gitignore" <<'EOF'
 # raw and derived sequencing data are too large to version

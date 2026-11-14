@@ -39,13 +39,13 @@ DATA = os.path.join(ROOT, "data")
 REF = os.path.join(DATA, "ref")
 RES = os.path.join(ROOT, "results")
 SEDIR = os.path.join(RES, "se")
-OUT = os.path.join(RES, "cross_cohort")
+OUT = os.environ.get("CC_OUT", os.path.join(RES, "cross_cohort"))
 BINSIZE = 5000
 RNG = np.random.default_rng(20261113)
 N_SPLITS = 25
 NSC_MAX = 0.25       # at most 2 of 12 NSC samples (v2; was 0.10)
 OTHER_MAX = 0.25     # 'absent' from the other adult cohort (v2; was 0.10)
-TOP_N = 500          # fixed-cutoff sensitivity analysis: top domains per sample
+TOP_N = int(os.environ.get("TOP_N", 500))  # fixed-cutoff sensitivity analysis: top domains per sample
 
 
 def lm(name, path):
@@ -353,6 +353,81 @@ def main():
         print(agt.round(4).to_string(index=False))
     pd.concat([ag, agt], ignore_index=True).to_csv(
         os.path.join(OUT, "agreement_both_definitions.csv"), index=False)
+
+    # ---- bootstrap over samples: CIs for the headline cross-cohort numbers ----
+    n_boot = int(os.environ.get("BOOT", "0"))
+    if n_boot and "GSC_line" in top_mats and "patient_tumour" in top_mats:
+        G, T = top_mats["GSC_line"], top_mats["patient_tumour"]
+        brng = np.random.default_rng(7)
+        recs = []
+        for _ in range(n_boot):
+            g = G[brng.integers(0, G.shape[0], G.shape[0])].mean(0)
+            t = T[brng.integers(0, T.shape[0], T.shape[0])].mean(0)
+            d = cross(g, t)
+            # ceiling from two halves of DISTINCT tumour samples: splitting a
+            # with-replacement resample can put copies of one sample in both
+            # halves, which leaks agreement and inflates the ceiling
+            perm = brng.permutation(T.shape[0]); h = T.shape[0] // 2
+            c = cross(T[perm[:h]].mean(0), T[perm[h:2*h]].mean(0))
+            recs.append({"spearman": d.get("spearman"), "ap": d.get("ap_predicting_b"),
+                         "ceiling_spearman": c.get("spearman"),
+                         "ceiling_ap": c.get("ap_predicting_b")})
+        b = pd.DataFrame(recs)
+        b["ap_fraction_of_ceiling"] = b["ap"] / b["ceiling_ap"]
+        b.to_csv(os.path.join(OUT, "bootstrap_gsc_tumour.csv"), index=False)
+        q = b.quantile([0.025, 0.5, 0.975]).T
+        q.columns = ["ci_low", "median", "ci_high"]
+        q.to_csv(os.path.join(OUT, "bootstrap_summary.csv"))
+        print(f"== bootstrap over samples, {n_boot} replicates (95% percentile CI) ==")
+        print(q.round(3).to_string())
+
+    # ---- size-matched agreement: k samples vs k samples ---------------------
+    # The split-half ceiling is built from half-size groups, so comparing it
+    # with a full-group cross-cohort value favours the cross-cohort side.
+    # Here both sides always average exactly k distinct samples.
+    if os.environ.get("SIZEMATCH") and "GSC_line" in top_mats:
+        srng = np.random.default_rng(11)
+        reps = int(os.environ.get("SIZEMATCH_REPS", 50))
+        recs = []
+        plan = [("patient_tumour", ["GSC_line"], [6, 10, 20]),
+                ("NSC", ["GSC_line", "patient_tumour"], [6]),
+                ("pediatric", ["GSC_line", "patient_tumour"], [6, 10])]
+        for b, sources, ks in plan:
+            if b not in top_mats:
+                continue
+            B = top_mats[b]
+            for k in ks:
+                if 2 * k > B.shape[0]:
+                    continue
+                for _ in range(reps):
+                    perm = srng.permutation(B.shape[0])
+                    b1, b2 = B[perm[:k]].mean(0), B[perm[k:2 * k]].mean(0)
+                    c = cross(b1, b2)
+                    recs.append({"target": b, "source": f"{b} (within)", "k": k,
+                                 "spearman": c.get("spearman"),
+                                 "ap": c.get("ap_predicting_b"),
+                                 "baseline": c.get("ap_baseline")})
+                    for a in sources:
+                        A = top_mats[a]
+                        pa = A[srng.choice(A.shape[0], k, replace=False)].mean(0)
+                        d = cross(pa, b2)
+                        recs.append({"target": b, "source": a, "k": k,
+                                     "spearman": d.get("spearman"),
+                                     "ap": d.get("ap_predicting_b"),
+                                     "baseline": d.get("ap_baseline")})
+        sm = pd.DataFrame(recs)
+        sm.to_csv(os.path.join(OUT, "size_matched_reps.csv"), index=False)
+        agg = sm.groupby(["target", "k", "source"]).agg(
+            spearman=("spearman", "mean"), ap=("ap", "mean"),
+            ap_sd=("ap", "std"), baseline=("baseline", "mean")).reset_index()
+        within = agg[agg["source"].str.endswith("(within)")].set_index(["target", "k"])
+        agg["ap_frac_within"] = [r.ap / within.loc[(r.target, r.k), "ap"]
+                                 for r in agg.itertuples()]
+        agg["sp_frac_within"] = [r.spearman / within.loc[(r.target, r.k), "spearman"]
+                                 for r in agg.itertuples()]
+        agg.to_csv(os.path.join(OUT, "size_matched.csv"), index=False)
+        print("== size-matched agreement ==")
+        print(agg.round(3).to_string())
 
     # ---- consensus core domains -------------------------------------------
     summary = {"binsize": BINSIZE, "n_bins_any_se": int(len(idx)),

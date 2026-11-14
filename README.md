@@ -48,8 +48,17 @@ programmatically.
   computed within each cohort, because between-cohort agreement is
   uninterpretable without knowing what two halves of one cohort achieve.
 - Super-enhancers follow ROSE: promoter-proximal peaks dropped, 12.5 kb
-  stitching, ranking by total H3K27ac signal, cutoff at the inflection point of
-  the ranked curve (found numerically, not at a fixed rank).
+  stitching, ranking by total H3K27ac signal. The ROSE inflection cutoff turned
+  out to track data provenance (median 280 SEs per GSC line vs 753 per
+  pediatric sample), so the **primary definition is the top 500 domains per
+  sample**; inflection results are kept alongside, and top-250 / top-1000 are
+  run as robustness checks.
+- **Split-half ceilings use half-size groups**, so comparing them with a
+  full-group cross-cohort statistic flatters the cross-cohort side. The headline
+  comparison is therefore **size-matched** (k samples vs k samples against a
+  shared reference set; `SIZEMATCH=1`).
+- Average precision with its chance level replaces ROC AUC, which exceeded 0.9
+  for every comparison at ~1 positive bin in 40.
 
 ## Pipeline
 
@@ -73,37 +82,64 @@ programmatically.
 20_loop_targets.py         3D contact vs nearest-TSS assignment
 21_loop_controls.py        single-TSS subset, distance-matched null,
                            cross-line reproducibility
+22_loop_depth_matched.py   subsample loops to equal depth, 20 repeats
 30_cross_cohort.py         recurrence, split-half ceilings, core domains
-40_motifs.py               motif enrichment, reproducible vs sporadic
+                           env: TOP_N (default 500), BOOT (bootstrap reps),
+                           SIZEMATCH=1 (size-matched agreement), CC_OUT
+40_motifs.py               SEA on constituent peaks, vs sporadic and shuffled
 50_expression.py           recurrence vs independent expression
 60_figures.py              600 dpi PNG + LZW TIFF figures
+70_write_report.py         short Methods & Results report (docx)
+80_manuscript.py           full manuscript + supplementary (docx), every
+                           number read from results/ at build time
+90_sync_github.sh          mirror code, tables, figures, manuscript for git
 run_pipeline.sh            unattended orchestration of the stages above
+```
+
+Rebuild the manuscript after any change upstream:
+
+```
+TOP_N=500 BOOT=200 SIZEMATCH=1 python code/30_cross_cohort.py
+python code/60_figures.py
+python3 code/80_manuscript.py      # needs python-docx, pandas
 ```
 
 Run `bash code/run_pipeline.sh` after `00_install_env.sh`; it waits for
 downloads, calibrates, converts, and calls every sample. Stages are resumable.
 
-## Results so far
+## Results (fixed top-500 definition; manuscript in `manuscript/`)
 
-Enhancer-to-gene assignment (GSE262089, 4 GSC lines + NSC, 33k-96k loops each):
+**Cross-cohort reproducibility** (89 GSC lines, 41 tumours, 12 NSC, 21 pediatric)
 
-- The nearest gene is the contacted gene for only **15-19%** of
-  enhancer-promoter contacts; **22-31%** when restricted to promoter anchors
-  containing a single TSS; a distance-matched decoy gene achieves **8-10%**.
-- For only **40-53%** of linked enhancers is the nearest gene even among the
-  genes that enhancer contacts.
-- Median contact distance 77-104 kb against a median nearest-TSS distance of
-  14-20 kb; the median link skips 2-3 intervening genes.
-- Genes contacted by the most distinct enhancers in all four GSC lines: MYC
-  (with CASC11), CDK6, JUN, JAG1, TRIB2, ZNF608, SPRY1, ZFP36L2, DUSP4, ATXN1.
-- Contact-target agreement between GSC lines (mean Jaccard 0.52-0.59) is
-  **not higher than GSC-versus-NSC agreement** (0.48-0.55), so at 10 kb anchor
-  resolution the enhancer-target wiring looks largely cell-type invariant; what
-  differs between tumour and normal is which enhancers are active, not which
-  genes they reach.
+- GSC-line recurrence predicts recurrent tumour bins with average precision
+  **0.83** (chance 0.03). Against the half-size split-half ceiling (0.87) that
+  looks like 96%, stable at top-250/500/1000.
+- **Size-matched**, GSC lines recover **87% (95% range 80-94%)** of the
+  agreement between two independent sets of 20 tumours, and fall short in
+  50/50 draws; ~85% at k = 6 and 10. A real but modest cell-line deficit.
+- Adult cohorts recover only **~60%** of within-pediatric agreement (k = 10).
+  Agreement with NSC cannot be separated from NSC's own noise (k = 6).
+- 985 bins are recurrent in both adult cohorts; 87 are rare in NSC, giving
+  **30 core domains (0.44 Mb)** incl. SOX9, LFNG, ID2-AS1, CCND2-AS1, WBP2,
+  C9orf50, CDC25B. Core size: 18 / 30 / 76 domains at top-250 / 500 / 1000.
 
-Cross-cohort super-enhancer reproducibility, motif enrichment and expression
-validation are computed by stages that run after the full download completes.
+**Enhancer-to-gene assignment** (GSE262089, 4 GSC lines + NSC)
+
+- Nearest gene = contacted gene for **15-19%** of links; **22-31%** for
+  single-TSS anchors; distance-matched decoy **8-10%**.
+- Median contact distance 77-104 kb vs nearest TSS 14-20 kb.
+- "GSC-specific" contacted genes: **1,397 as called -> 436 at matched depth
+  -> 107 robust** (>=80% of 20 subsamples), incl. BRD4, JUN, FOSL2, CEBPB,
+  FOXG1, GOLIM4, ADAM17, LAMC1, KIF5B.
+
+**Motifs and expression**
+
+- 52 GC-box motifs enriched vs sporadic peaks; **none** vs a
+  dinucleotide-shuffled control (core 56.9% GC vs 48.9%): composition, not TF
+  signal; 79 peaks, underpowered.
+- Genes near core domains are more highly expressed in TCGA GBM (Cliff's
+  delta 0.25, p = 0.008), pediatric HGG and LGG; genome-wide, NSC recurrence
+  correlates with expression nearly as well as GSC recurrence (0.20 vs 0.25).
 
 ## Caveats
 
@@ -123,6 +159,7 @@ validation are computed by stages that run after the full download completes.
 ```
 code/      analysis scripts (this repository)
 data/      manifests and reference annotation; raw signal is not committed
+manuscript/ manuscript and supplementary information (docx)
 results/   per-sample calls, agreement tables, gene assignments
 figures/   600 dpi PNG and LZW TIFF
 logs/      stage logs
