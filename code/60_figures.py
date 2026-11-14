@@ -106,10 +106,11 @@ def fig2():
     if not os.path.exists(p):
         return print("  fig2: no recurrence table")
     r = pd.read_csv(p)
-    cols = [c for c in r.columns if c.startswith("se_rec_")]
+    cols = ([c for c in r.columns if c.startswith("top_rec_")]
+            or [c for c in r.columns if c.startswith("se_rec_")])
     fig, axes = plt.subplots(1, 2, figsize=(7.0, 2.6))
     for c in cols:
-        g = c[len("se_rec_"):]
+        g = c.split("rec_", 1)[1]
         v = np.sort(r[c].to_numpy())[::-1]
         axes[0].plot(np.arange(1, len(v) + 1) / 1e3, v, lw=1.1,
                      color=PALETTE.get(g, ORANGE), label=g.replace("_", " "))
@@ -118,8 +119,9 @@ def fig2():
     axes[0].legend(frameon=False)
     letter(axes[0], "a")
 
-    if "se_rec_GSC_line" in r.columns and "se_rec_patient_tumour" in r.columns:
-        x, y = r["se_rec_GSC_line"], r["se_rec_patient_tumour"]
+    if ("top_rec_GSC_line" in r.columns or "se_rec_GSC_line" in r.columns):
+        p = "top_rec_" if "top_rec_GSC_line" in r.columns else "se_rec_"
+        x, y = r[p + "GSC_line"], r[p + "patient_tumour"]
         axes[1].hexbin(x, y, gridsize=38, bins="log", cmap="Greys", linewidths=0)
         axes[1].axhline(0.5, color=RED, lw=0.6, ls="--")
         axes[1].axvline(0.5, color=RED, lw=0.6, ls="--")
@@ -133,29 +135,55 @@ def fig2():
 
 
 def fig3():
-    p = os.path.join(CC, "agreement.csv")
+    p = os.path.join(CC, "agreement_topN.csv")
+    if not os.path.exists(p):
+        p = os.path.join(CC, "agreement.csv")
     if not os.path.exists(p):
         return print("  fig3: no agreement table")
     a = pd.read_csv(p)
-    fig, axes = plt.subplots(1, 3, figsize=(7.4, 2.6))
-    metrics = [("spearman", "Spearman rho"),
-               ("auc_predicting_b", "AUC predicting target cohort"),
-               ("jaccard_at_50pct", "Jaccard at 50% recurrence")]
-    for ax, (col, lab) in zip(axes, metrics):
+    order = ["GSC_line split-half (ceiling)", "patient_tumour split-half (ceiling)",
+             "GSC_line -> patient_tumour", "patient_tumour -> GSC_line",
+             "GSC_line -> NSC", "patient_tumour -> NSC",
+             "GSC_line -> pediatric", "patient_tumour -> pediatric",
+             "NSC split-half (ceiling)", "pediatric split-half (ceiling)"]
+    a = a.set_index("comparison").reindex([o for o in order if o in set(a["comparison"])])
+    labels = [s.replace("_", " ").replace(" split-half (ceiling)", ", split-half")
+              .replace("patient tumour", "tumour").replace("GSC line", "GSC")
+              .replace(" -> ", " → ") for s in a.index]
+    metrics = [("spearman", "Spearman ρ", (-0.1, 0.5)),
+               ("ap_predicting_b", "average precision", (0, 1)),
+               ("jaccard_at_50pct", "Jaccard, ≥50% recurrence", (0, 1))]
+    fig, axes = plt.subplots(1, 3, figsize=(7.2, 3.3), sharey=True)
+    y = np.arange(len(a))
+    cols = [GREEN if "split-half" in s else BLUE for s in a.index]
+    for ax, (col, lab, lim) in zip(axes, metrics):
         if col not in a.columns:
+            ax.set_visible(False)
             continue
-        d = a[np.isfinite(a[col])]
-        colr = [GREEN if "ceiling" in s else BLUE for s in d["comparison"]]
-        ax.barh(range(len(d)), d[col], color=colr, height=0.62)
-        ax.set_yticks(range(len(d)))
-        ax.set_yticklabels([s.replace("_", " ").replace(" -> ", " -> ")
-                            for s in d["comparison"]], fontsize=6)
+        v = a[col].to_numpy(dtype=float)
+        ax.barh(y, np.nan_to_num(v), color=cols, height=0.62)
+        for yi, vi in zip(y, v):
+            if np.isfinite(vi):
+                off = 0.01 * (lim[1] - lim[0])
+                ax.text(max(vi, 0) + off, yi, f"{vi:.2f}",
+                        va="center", ha="left", fontsize=5.5)
+        if col == "ap_predicting_b" and "ap_baseline" in a.columns:
+            base = a["ap_baseline"].to_numpy(dtype=float)
+            ok = np.isfinite(base)
+            ax.plot(base[ok], y[ok], "|", color=RED, ms=7, mew=1.2,
+                    label="chance (prevalence)")
+            ax.legend(frameon=False, fontsize=5.5, loc="center right")
+        ax.set_xlim(*lim)
         ax.set_xlabel(lab)
-        ax.invert_yaxis()
-    axes[0].text(0.02, -0.33, "green = within-cohort split-half ceiling, "
-                 "blue = between cohorts", transform=axes[0].transAxes, fontsize=6)
+        ax.axvline(0, color="k", lw=0.4)
+    axes[0].set_yticks(y)
+    axes[0].set_yticklabels(labels, fontsize=6)
+    axes[0].invert_yaxis()
     letter(axes[0], "a")
-    fig.tight_layout()
+    fig.text(0.01, 0.005, "green: two random halves of one cohort (noise ceiling); "
+             "blue: between cohorts. Fixed top-500 domains per sample.",
+             fontsize=5.5)
+    fig.tight_layout(rect=(0, 0.03, 1, 1))
     save(fig, "Fig3_agreement_vs_ceiling")
 
 

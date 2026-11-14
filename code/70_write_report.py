@@ -101,7 +101,9 @@ def build():
     manifest = read_csv(os.path.join(DATA, "manifest.csv"))
     se_sum = read_csv(os.path.join(RES, "se_summary.csv"))
     calib = read_json(os.path.join(RES, "calibration_best.json"))
-    agree = read_csv(os.path.join(CC, "agreement.csv"))
+    agree = read_csv(os.path.join(CC, "agreement_both_definitions.csv"))
+    if agree is None:
+        agree = read_csv(os.path.join(CC, "agreement.csv"))
     ccsum = read_json(os.path.join(CC, "summary.json"))
     core_genes = read_csv(os.path.join(CC, "core_domain_genes.csv"))
     controls = read_csv(os.path.join(LT, "controls_summary.csv"))
@@ -202,8 +204,10 @@ def build():
       "each cohort group, recurrence in a bin is the fraction of samples in that "
       "group whose super-enhancer calls cover it. Agreement between two cohorts "
       "was measured by Spearman correlation of bin recurrence, by the area under "
-      "the ROC curve when one cohort's recurrence is used to predict whether a "
-      "bin is recurrent in the other, and by the Jaccard index of bins recurrent "
+      "the precision-recall curve (average precision) when one cohort's "
+      "recurrence is used to predict whether a bin is recurrent in the other "
+      "(ROC AUC is not used: with roughly one positive bin in sixty it reads "
+      "above 0.9 for every comparison, including unrelated ones), and by the Jaccard index of bins recurrent "
       "in at least half the samples of each.")
     P("Agreement between cohorts is not interpretable on its own, because part "
       "of any disagreement is sampling noise rather than biology. Each cohort "
@@ -287,14 +291,54 @@ def build():
             P("Table 3 reports every agreement statistic together with the "
               "within-cohort split-half ceiling. Cross-cohort agreement should "
               "be read as a fraction of that ceiling, not in absolute terms.")
+            tn = read_csv(os.path.join(CC, "agreement_topN.csv"))
+            if tn is not None and "ap_predicting_b" in tn.columns:
+                def v(comp, col):
+                    r = tn[tn["comparison"] == comp]
+                    return float(r[col].iloc[0]) if len(r) else float("nan")
+                sg = v("GSC_line split-half (ceiling)", "spearman")
+                sp_ = v("patient_tumour split-half (ceiling)", "spearman")
+                gx = v("GSC_line -> patient_tumour", "spearman")
+                ag = v("GSC_line -> patient_tumour", "ap_predicting_b")
+                ab = v("GSC_line -> patient_tumour", "ap_baseline")
+                cp = v("patient_tumour split-half (ceiling)", "ap_predicting_b")
+                an = v("GSC_line -> NSC", "ap_predicting_b")
+                ap_ = v("GSC_line -> pediatric", "ap_predicting_b")
+                P(f"Under the fixed top-500 definition, GSC-line recurrence "
+                  f"predicts which bins are recurrent in patient tumours with an "
+                  f"average precision of {ag:.3f}, against a chance level of "
+                  f"{ab:.3f} and a ceiling of {cp:.3f} set by two halves of the "
+                  f"tumour cohort predicting each other - {100*ag/cp:.0f}% of "
+                  f"the achievable agreement. The Spearman correlation between "
+                  f"the two adult cohorts, {gx:.3f}, likewise sits within the "
+                  f"split-half values of {sg:.3f} and {sp_:.3f}. Cell lines and "
+                  f"patient tumours therefore agree with each other about as "
+                  f"well as either agrees with itself: there is no detectable "
+                  f"cohort-specific super-enhancer component beyond sampling "
+                  f"noise. That ceiling is itself modest, so most per-bin "
+                  f"variation is noise in both cohorts. Agreement falls to "
+                  f"{an:.3f} for neural stem cells and {ap_:.3f} for pediatric "
+                  f"high-grade glioma. Lower agreement is expected for different "
+                  f"cell states, but those cohorts also differ in laboratory and "
+                  f"processing, and the two explanations cannot be separated "
+                  f"with these data.")
         table(agree.round(4), "Table 3. Cross-cohort agreement and split-half "
                               "noise ceilings.")
     else:
         P("Cross-cohort agreement is not yet computed.")
 
     if ccsum:
+        P(f"Super-enhancers are defined here as the {ccsum.get('definition', 'top domains')} "
+          f"ranked by H3K27ac signal. The ROSE inflection rule was also run, "
+          f"but its per-sample count tracked data provenance rather than "
+          f"biology (median 280 in the hg19 bedGraph GSC cohort against 606 in "
+          f"neural stem-cell controls), so a fixed number per sample is used to "
+          f"give every sample equal weight; agreement under both definitions is "
+          f"given in Table 3.")
         P(f"Applying a threshold of recurrence in at least half the samples of "
-          f"both adult cohorts, and under 10% of neural stem-cell controls, "
+          f"both adult cohorts, and under "
+          f"{100*ccsum.get('nsc_max', 0.25):.0f}% of the 12 neural stem-cell "
+          f"controls (at most two), "
           f"defines {fmt(ccsum.get('n_core_domains'))} consensus core domains "
           f"spanning {fmt(ccsum.get('core_mb'), 1)} Mb. For comparison, "
           f"{fmt(ccsum.get('n_sporadic_domains'))} domains were called a "
@@ -403,6 +447,27 @@ def build():
         P("Depth-matched controls are not yet computed.")
 
     H("Motif content of reproducible domains", 2)
+    gcj = read_json(os.path.join(RES, "motifs", "gc_composition.json")) or {}
+    cs = gcj.get("core_vs_sporadic", {})
+    if motifs is not None and len(motifs) and cs:
+        qc = "QVALUE" if "QVALUE" in motifs.columns else None
+        n_sp = int((motifs[(motifs["comparison"] == "core_vs_sporadic")][qc] < 0.05).sum()) if qc else 0
+        n_sh = int((motifs[(motifs["comparison"] == "core_vs_shuffled")][qc] < 0.05).sum()) if qc else 0
+        P(f"Motifs were tested on the constituent H3K27ac peaks of each domain "
+          f"set (peak centre ±250 bp), because whole stitched domains of "
+          f"10-40 kb contain nearly every motif and leave presence-based "
+          f"enrichment uninformative. Against peaks from sporadic domains, "
+          f"{n_sp} of 879 JASPAR motifs reached q < 0.05, every one of them a "
+          f"GC-box family (KLF, SP, PATZ1, ZNF281, TFAP2C). The core peaks are "
+          f"{100*cs.get('primary', float('nan')):.1f}% GC against "
+          f"{100*cs.get('control', float('nan')):.1f}% for the controls, and "
+          f"against a dinucleotide-shuffled control of the same sequences, "
+          f"which preserves base composition, {n_sh} motifs reached q < 0.05. "
+          f"The apparent enrichment is therefore explained by base composition "
+          f"and is not evidence for any specific transcription factor. With "
+          f"79 core peaks the test has limited power, and a GC-matched "
+          f"background or a larger consensus set would be needed before a "
+          f"negative result here could be read as absence of motif signal.")
     if motifs is not None and len(motifs):
         qcol = "QVALUE" if "QVALUE" in motifs.columns else None
         for comp, d in motifs.groupby("comparison"):
@@ -443,9 +508,10 @@ def build():
          "recurrence in GSC lines and patient tumours; dashed lines mark the 50% "
          "recurrence threshold used to define consensus domains."),
         ("Figure 3", "Cross-cohort agreement against within-cohort split-half "
-         "noise ceilings, for Spearman correlation of bin recurrence, the area "
-         "under the ROC curve for predicting the other cohort, and the Jaccard "
-         "index at 50% recurrence."),
+         "noise ceilings, using the fixed top-500 domains per sample: Spearman "
+         "correlation of bin recurrence, average precision for predicting the "
+         "other cohort with chance level marked in red, and the Jaccard index "
+         "at 50% recurrence."),
         ("Figure 4", "Enhancer-to-gene assignment. (a) Fraction of "
          "enhancer-promoter links for which the nearest gene is the contacted "
          "gene, for all links, for single-start-site promoter anchors, and for "
@@ -457,8 +523,11 @@ def build():
         ("Figure 5", "Consensus core domains. (a) Size of each domain class. "
          "(b) Width distribution of core domains. (c) The widest core domains, "
          "labelled by nearest gene."),
-        ("Figure 6", "Motif enrichment in reproducible versus sporadic domains, "
-         "ranked by significance."),
+        ("Figure 6", "Motif enrichment among the constituent peaks of core "
+         "domains, against peaks from sporadic domains (left) and against a "
+         "dinucleotide-shuffled control of the same sequences (right). Every "
+         "motif significant on the left is a GC-box family, and none survives "
+         "the composition-preserving control."),
         ("Figure 7", "Super-enhancer recurrence against independent expression "
          "data. Boxes compare genes carrying a core super-enhancer, another "
          "super-enhancer, or none, in each expression dataset; the final panel "

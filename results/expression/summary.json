@@ -1,0 +1,41 @@
+{
+  "window_kb": 100,
+  "n_genes": 38899,
+  "class_counts": {
+    "other_se": 20428,
+    "no_se": 18401,
+    "core": 70
+  },
+  "top_core_genes_by_tcga_expression": [
+    "EIF4H",
+    "CLIP2",
+    "CCND2",
+    "WBP2",
+    "GNA12",
+    "CDC42EP4",
+    "SOX9",
+    "ID2",
+    "OBSL1",
+    "TRIM47",
+    "CDKN2C",
+    "LFNG",
+    "CHD3",
+    "TNK2",
+    "RNF157",
+    "TRAPPC1",
+    "RFC2",
+    "MRPL38",
+    "FAF1",
+    "C17orf80",
+    "FAM104A",
+    "CNTROB",
+    "KDM6B",
+    "TRIM65",
+    "CYB5D1",
+    "STK11IP",
+    "NAA38",
+    "UNC13D",
+    "ADAM33",
+    "FBF1"
+  ]
+}

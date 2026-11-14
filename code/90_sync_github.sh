@@ -19,6 +19,7 @@ done
 
 # result tables and beds, excluding per-sample bulk
 rsync -a --delete \
+  --exclude='se/' --exclude='se_test/' --exclude='_v1_*/' \
   --include='*/' \
   --include='*.csv' --include='*.csv.gz' --include='*.json' \
   --include='*.bed' --include='*.tsv' \
@@ -42,6 +43,8 @@ results/se/
 *.bigwig
 *.bedGraph.gz
 *.npz
+__pycache__/
+*.pyc
 EOF
 
 cd "$DST" || exit 1

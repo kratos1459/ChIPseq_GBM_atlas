@@ -68,6 +68,45 @@ def length_match(primary, pool, rng=RNG):
     return chosen
 
 
+PEAK_DIR = os.path.join(ROOT, "data", "peaks_called", "patient_tumour_adult")
+HALF = 250
+
+
+def peak_centres(domain_bed, workdir, tag):
+    """Constituent H3K27ac peaks inside a domain set, as peak-centre +/-250 bp.
+
+    SEA scores motif presence per sequence. Whole stitched domains are 10-40 kb,
+    long enough to contain almost every motif, so primary and control both sit
+    near 100% and nothing can be enriched. Testing the constituent peaks keeps
+    the sequences short enough for presence to be informative. Peaks come from
+    the hg38 patient-tumour calls, so no lifting is involved.
+    """
+    import glob as _g
+
+    files = sorted(_g.glob(os.path.join(PEAK_DIR, "*.bed")))
+    if not files:
+        return []
+    allp = os.path.join(workdir, f"_{tag}_allpeaks.bed")
+    with open(allp, "w") as out:
+        for f in files:
+            with open(f) as fh:
+                for line in fh:
+                    p = line.split()
+                    if len(p) >= 3:
+                        out.write(f"{p[0]}\t{p[1]}\t{p[2]}\n")
+    merged = subprocess.run(
+        f"sort -k1,1 -k2,2n {allp} | bedtools merge -i - | "
+        f"bedtools intersect -u -a - -b {domain_bed}",
+        shell=True, capture_output=True, text=True).stdout
+    os.remove(allp)
+    out = []
+    for line in merged.splitlines():
+        c, s, e = line.split()[:3]
+        mid = (int(s) + int(e)) // 2
+        out.append((c, max(0, mid - HALF), mid + HALF))
+    return out
+
+
 def cap(regions, n=MAX_SEQ, rng=RNG):
     if len(regions) <= n:
         return regions
@@ -92,13 +131,18 @@ def getfasta(bed, out_fa):
 
 def run_sea(primary_fa, control_fa, outdir):
     os.makedirs(outdir, exist_ok=True)
-    cmd = ["sea", "--p", primary_fa, "--m", MOTIFS, "--o", outdir, "--thresh", "1"]
+    # --text writes results to stdout. The bioconda MEME 5.5.9 build ships
+    # without its HTML template, so the default mode writes only the TSV
+    # header and then aborts ("Template does not contain data section").
+    cmd = ["sea", "--text", "--p", primary_fa, "--m", MOTIFS, "--thresh", "1000"]
     if control_fa:
-        cmd[3:3] = ["--n", control_fa]
+        cmd[2:2] = ["--n", control_fa]
     p = subprocess.run(cmd, capture_output=True, text=True)
     tsv = os.path.join(outdir, "sea.tsv")
-    if not os.path.exists(tsv):
-        raise RuntimeError((p.stderr or p.stdout).strip()[-400:])
+    with open(tsv, "w") as fh:
+        fh.write(p.stdout)
+    if p.returncode != 0 or p.stdout.count("\n") < 2:
+        raise RuntimeError((p.stderr or "no output").strip()[-400:])
     return tsv
 
 
@@ -154,7 +198,7 @@ def main():
         name = f"{prim}_vs_{ctrl or 'shuffled'}"
         wd = os.path.join(OUT, name)
         os.makedirs(wd, exist_ok=True)
-        P = cap(read_bed(have[prim]))
+        P = cap(peak_centres(have[prim], wd, "p"))
         if len(P) < 20:
             print(f"{name}: only {len(P)} primary regions, skipped")
             continue
@@ -163,7 +207,7 @@ def main():
         getfasta(pb, pf)
         cf_ = None
         if ctrl:
-            C = length_match(P, read_bed(have[ctrl]))
+            _pool = peak_centres(have[ctrl], wd, "c"); C = [_pool[i] for i in RNG.choice(len(_pool), size=min(len(_pool), len(P)), replace=False)] if _pool else []
             if len(C) < 20:
                 print(f"{name}: control too small ({len(C)}), using shuffled")
             else:
@@ -188,6 +232,22 @@ def main():
         show = [c for c in ("ID", "ALT_ID", "ENR_RATIO", "QVALUE") if c in df.columns]
         if col_q:
             print(sig.nsmallest(12, col_q)[show].to_string(index=False))
+
+    # base composition of every sequence set: a GC-box motif "enriched" against
+    # a control of lower GC is composition, not transcription-factor binding
+    import json as _json
+    gc = {}
+    for comp in os.listdir(OUT):
+        for role in ("primary", "control"):
+            fa = os.path.join(OUT, comp, f"{role}.fa")
+            if os.path.exists(fa):
+                seq = "".join(l.strip() for l in open(fa) if not l.startswith(">")).upper()
+                if seq:
+                    gc.setdefault(comp, {})[role] = round(
+                        (seq.count("G") + seq.count("C")) / len(seq), 4)
+    with open(os.path.join(OUT, "gc_composition.json"), "w") as fh:
+        _json.dump(gc, fh, indent=2)
+    print("GC composition:", gc)
 
     if frames:
         allm = pd.concat(frames, ignore_index=True)

@@ -75,7 +75,8 @@ def load_genes():
 
 def per_gene_recurrence(genes, rec, window=WINDOW):
     """Max recurrence in any SE bin within +/- window of each TSS."""
-    cols = [c for c in rec.columns if c.startswith("se_rec_")]
+    cols = ([c for c in rec.columns if c.startswith("top_rec_")]
+            or [c for c in rec.columns if c.startswith("se_rec_")])
     out = {c: np.zeros(len(genes)) for c in cols}
     for chrom, gidx in genes.groupby("chrom").groups.items():
         sub = rec[rec["chrom"] == chrom]
@@ -94,7 +95,7 @@ def per_gene_recurrence(genes, rec, window=WINDOW):
             for a, b, pos in zip(lo, hi, gi):   # genes is reset_index'd: index == position
                 out[c][pos] = v[a:b].max() if b > a else 0.0
     for c in cols:
-        genes[c.replace("se_rec_", "rec_")] = out[c]
+        genes[c.replace("top_rec_", "rec_").replace("se_rec_", "rec_")] = out[c]
     return genes
 
 
@@ -173,7 +174,7 @@ def main():
         g["rec_adult_mean"] = g[["rec_GSC_line", "rec_patient_tumour"]].mean(axis=1)
         nsc = g["rec_NSC"] if "rec_NSC" in g.columns else 0.0
         g["class"] = np.where(
-            (g["rec_adult_min"] >= 0.5) & (nsc < 0.10), "core",
+            (g["rec_adult_min"] >= 0.5) & (nsc < 0.25), "core",
             np.where(g["rec_adult_mean"] > 0, "other_se", "no_se"),
         )
     g.to_csv(os.path.join(OUT, "gene_recurrence_expression.csv.gz"),

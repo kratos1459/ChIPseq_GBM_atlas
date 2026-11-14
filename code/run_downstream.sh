@@ -38,7 +38,7 @@ run 60_figures.py       60_figures.log      "figures"
 
 # the report needs python-docx, which lives in the base interpreter
 say "downstream: Methods and Results document"
-python3 code/70_write_report.py > "$LOG/70_report.log" 2>&1
+/home/arian/miniconda3/bin/python3 code/70_write_report.py > "$LOG/70_report.log" 2>&1
 say "downstream: report exit $? -> $(tail -1 "$LOG/70_report.log")"
 
 bash code/90_sync_github.sh "ChIP-seq GBM atlas: full cross-cohort results" \
